@@ -2,14 +2,16 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+import sys
+
+BASE_DIR = Path(__file__).resolve().parents[1]
+if str(BASE_DIR) not in sys.path:
+    sys.path.append(str(BASE_DIR))
 
 from airflow import DAG
 from airflow.operators.python import PythonOperator
 
 from app import create_trending_pdf
-
-
-BASE_DIR = Path(__file__).resolve().parents[1]
 DATA_DIR = BASE_DIR / "data"
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 DUCKDB_PATH = DATA_DIR / "yt_trending.duckdb"
@@ -147,4 +149,3 @@ with DAG(
     )
 
     create_pdf >> save_metadata >> purge_old
-
