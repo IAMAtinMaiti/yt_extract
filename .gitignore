@@ -1,6 +1,7 @@
 /.idea/
 /.venv/
 /data/
+/logs
 
 /dags/__pycache__/
 /plugins/__pycache__/
