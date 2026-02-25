@@ -1,3 +1,11 @@
+#
+# Example Kubernetes deployment manifest
+#
+# This file defines a minimal "Hello World" web application using Nginx.
+# It is currently used as an example template for the yt_extract project
+# and can be adapted later to deploy a real web UI or API component.
+#
+
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -51,3 +59,4 @@ spec:
     port: 80
     targetPort: 80
   type: NodePort
+
