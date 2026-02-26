@@ -28,8 +28,21 @@ ENV FLASK_APP=superset
 ENV SUPERSET_PORT=8088
 # Override in production; required for sessions
 ENV SUPERSET_SECRET_KEY=change-me-in-production-use-openssl-rand-base64-42
+ENV SUPERSET_ADMIN_USERNAME=admin \
+    SUPERSET_ADMIN_PASSWORD=admin \
+    SUPERSET_ADMIN_FIRST_NAME=admin \
+    SUPERSET_ADMIN_LAST_NAME=admin \
+    SUPERSET_ADMIN_EMAIL=admin@admin.com
 ENV PYTHONPATH=/app
 EXPOSE 8088
 
-# Init DB and run (idempotent after first run)
-CMD superset db upgrade && superset init && superset run -p 8088 --with-threads --host 0.0.0.0
+# Init DB, create admin user, and run (idempotent after first run)
+CMD superset db upgrade && \
+    (superset fab create-admin \
+        --username "${SUPERSET_ADMIN_USERNAME}" \
+        --firstname "${SUPERSET_ADMIN_FIRST_NAME}" \
+        --lastname "${SUPERSET_ADMIN_LAST_NAME}" \
+        --email "${SUPERSET_ADMIN_EMAIL}" \
+        --password "${SUPERSET_ADMIN_PASSWORD}" || true) && \
+    superset init && \
+    superset run -p 8088 --with-threads --host 0.0.0.0

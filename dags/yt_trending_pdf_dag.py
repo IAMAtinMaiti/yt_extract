@@ -166,9 +166,11 @@ def extract_trending_data_with_llm(ti, **_: dict) -> None:
         openai_api_key=openai_api_key,
     )
 
+    # Treat the markdown prompt as a literal string so any `{` / `}` in the
+    # JSON example are not interpreted as template variables.
     prompt = ChatPromptTemplate.from_messages(
         [
-            ("system", prompt_instructions),
+            ("system", "{instructions}"),
             (
                 "user",
                 "Here is the full text content of the PDF:\n\n{pdf_text}",
@@ -177,7 +179,12 @@ def extract_trending_data_with_llm(ti, **_: dict) -> None:
     )
 
     chain = prompt | llm
-    response = chain.invoke({"pdf_text": pdf_text})
+    response = chain.invoke(
+        {
+            "pdf_text": pdf_text,
+            "instructions": prompt_instructions,
+        }
+    )
     content = response.content if hasattr(response, "content") else str(response)
 
     try:
