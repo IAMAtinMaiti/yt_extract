@@ -1,4 +1,5 @@
 selenium==4.32.0
 duckdb==1.4.4
+duckdb-engine
 streamlit==1.54.0
 pandas==2.3.3
