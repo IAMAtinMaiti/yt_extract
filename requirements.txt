@@ -1,5 +1,9 @@
 selenium==4.32.0
 duckdb==1.4.4
-duckdb-engine
 streamlit==1.54.0
 pandas==2.3.3
+langchain-openai==1.1.10
+pypdf==6.7.3
+
+# this is for superset
+duckdb-engine==0.17.0
