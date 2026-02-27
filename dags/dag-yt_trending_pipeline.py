@@ -14,8 +14,8 @@ import sys
 import uuid
 import dotenv
 from airflow import DAG
-from airflow.operators.python import PythonOperator
-from airflow.operators.empty import EmptyOperator
+from airflow.providers.standard.operators.python import PythonOperator
+from airflow.providers.standard.operators.empty import EmptyOperator
 
 BASE_DIR = Path(__file__).resolve().parents[1]
 if str(BASE_DIR) not in sys.path:
@@ -53,9 +53,10 @@ def store_snapshot_metadata(ti, **_: dict) -> None:
     """
     import duckdb
 
-    snapshot_path = ti.xcom_pull(task_ids="create_trending_snapshot")
+    # Pull the snapshot path from the current task id used in the DAG.
+    snapshot_path = ti.xcom_pull(task_ids="create_snapshot")
     if not snapshot_path:
-        raise ValueError("No snapshot path returned from create_trending_snapshot")
+        raise ValueError("No snapshot path returned from create_snapshot")
 
     snapshot_path_obj = Path(snapshot_path)
     if not snapshot_path_obj.is_absolute():
@@ -139,9 +140,11 @@ def extract_trending_data_with_llm(ti, **_: dict) -> None:
             "OPENAI_API_KEY environment variable must be set for LLM extraction task."
         )
 
-    # Prefer the current task name, but fall back to the legacy one if needed.
-    snapshot_path = ti.xcom_pull(task_ids="task_create_trending_snapshot") or ti.xcom_pull(
-        task_ids="create_trending_pdf"
+    # Prefer the current task name, but fall back to legacy ones if needed.
+    snapshot_path = (
+        ti.xcom_pull(task_ids="create_snapshot")
+        or ti.xcom_pull(task_ids="task_create_trending_snapshot")
+        or ti.xcom_pull(task_ids="create_trending_pdf")
     )
     if not snapshot_path:
         raise ValueError(
@@ -378,6 +381,7 @@ with DAG(
     create_snapshot = PythonOperator(
         task_id="create_snapshot",
         python_callable=create_trending_snapshot,
+        do_xcom_push=True,
     )
 
     save_metadata = PythonOperator(
