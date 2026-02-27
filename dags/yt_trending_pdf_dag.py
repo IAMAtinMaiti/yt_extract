@@ -1,5 +1,11 @@
-from __future__ import annotations
+"""
+yt_trending_pdf_dag
 
+DAG to capture YouTube Trending as an image snapshot, store metadata in DuckDB,
+and purge old snapshots.
+"""
+
+from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 import json
@@ -7,16 +13,15 @@ import os
 import sys
 import uuid
 import dotenv
-dotenv.load_dotenv()
+from airflow import DAG
+from airflow.operators.python import PythonOperator
+from airflow.operators.empty import EmptyOperator
 
 BASE_DIR = Path(__file__).resolve().parents[1]
 if str(BASE_DIR) not in sys.path:
     sys.path.append(str(BASE_DIR))
 
-from airflow import DAG
-from airflow.operators.python import PythonOperator
-
-from app import create_trending_pdf
+dotenv.load_dotenv()
 DATA_DIR = BASE_DIR / "data"
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 DUCKDB_PATH = DATA_DIR / "yt_trending.duckdb"
@@ -25,39 +30,41 @@ PROMPTS_DIR = BASE_DIR / "prompts"
 YT_EXTRACT_PROMPT_PATH = PROMPTS_DIR / "yt_extract_prompt.md"
 
 
-def run_create_trending_pdf(**_: dict) -> str:
+def create_trending_snapshot(**_: dict) -> str:
     """
-    Task callable that runs the existing create_trending_pdf function.
-    Returns the path to the generated PDF so it can be used via XCom.
+    Capture the YouTube Trending page as a PNG screenshot using headless Chrome.
+
+    Returns:
+        The path to the generated image file.
     """
-    pdf_path = create_trending_pdf()
-    return pdf_path
+    from tasks import create_trending_snapshot
+    return create_trending_snapshot()
 
 
 def store_snapshot_metadata(ti, **_: dict) -> None:
     """
-    Persist metadata about the generated PDF into DuckDB.
+    Persist metadata about the generated snapshot file into DuckDB.
 
     Data model (table: trending_snapshots):
       - snapshot_timestamp (TIMESTAMPTZ): when this pipeline run stored the record
-      - file_mtime        (TIMESTAMPTZ): filesystem modified time of the PDF
-      - file_path         (TEXT): absolute path to the PDF file
-      - file_size_bytes   (BIGINT): size of the PDF in bytes
+      - file_mtime        (TIMESTAMPTZ): filesystem modified time of the snapshot
+      - file_path         (TEXT): absolute path to the snapshot file
+      - file_size_bytes   (BIGINT): size of the snapshot in bytes
     """
     import duckdb
 
-    pdf_path = ti.xcom_pull(task_ids="create_trending_pdf")
-    if not pdf_path:
-        raise ValueError("No PDF path returned from create_trending_pdf")
+    snapshot_path = ti.xcom_pull(task_ids="create_trending_snapshot")
+    if not snapshot_path:
+        raise ValueError("No snapshot path returned from create_trending_snapshot")
 
-    pdf_path_obj = Path(pdf_path)
-    if not pdf_path_obj.is_absolute():
-        pdf_path_obj = (BASE_DIR / pdf_path_obj).resolve()
+    snapshot_path_obj = Path(snapshot_path)
+    if not snapshot_path_obj.is_absolute():
+        snapshot_path_obj = (BASE_DIR / snapshot_path_obj).resolve()
 
-    if not pdf_path_obj.exists():
-        raise FileNotFoundError(f"Generated PDF not found at {pdf_path_obj}")
+    if not snapshot_path_obj.exists():
+        raise FileNotFoundError(f"Generated snapshot not found at {snapshot_path_obj}")
 
-    file_stats = pdf_path_obj.stat()
+    file_stats = snapshot_path_obj.stat()
     snapshot_timestamp = datetime.now(timezone.utc)
     file_mtime = datetime.fromtimestamp(file_stats.st_mtime, tz=timezone.utc)
     file_size_bytes = file_stats.st_size
@@ -84,7 +91,7 @@ def store_snapshot_metadata(ti, **_: dict) -> None:
             )
             VALUES (?, ?, ?, ?)
             """,
-            [snapshot_timestamp, file_mtime, str(pdf_path_obj), file_size_bytes],
+            [snapshot_timestamp, file_mtime, str(snapshot_path_obj), file_size_bytes],
         )
     finally:
         conn.close()
@@ -92,9 +99,9 @@ def store_snapshot_metadata(ti, **_: dict) -> None:
 
 def extract_trending_data_with_llm(ti, **_: dict) -> None:
     """
-    Use an LLM (via LangChain + OpenAI) to extract structured
-    video data from the generated PDF and store a flattened view
-    into DuckDB.
+    Use OCR + an LLM (via LangChain + OpenAI) to extract structured
+    video data from the generated PNG snapshot and store a flattened
+    view into DuckDB.
 
     Table: trending_videos
       - uuid              (TEXT)          unique row identifier
@@ -121,7 +128,8 @@ def extract_trending_data_with_llm(ti, **_: dict) -> None:
       - repeated_listing  (BOOLEAN)
       - additional_metadata (TEXT)
     """
-    from pypdf import PdfReader
+    from PIL import Image
+    import pytesseract
     from langchain_openai import ChatOpenAI
     from langchain_core.prompts import ChatPromptTemplate
 
@@ -131,16 +139,22 @@ def extract_trending_data_with_llm(ti, **_: dict) -> None:
             "OPENAI_API_KEY environment variable must be set for LLM extraction task."
         )
 
-    pdf_path = ti.xcom_pull(task_ids="create_trending_pdf")
-    if not pdf_path:
-        raise ValueError("No PDF path returned from create_trending_pdf")
+    # Prefer the current task name, but fall back to the legacy one if needed.
+    snapshot_path = ti.xcom_pull(task_ids="task_create_trending_snapshot") or ti.xcom_pull(
+        task_ids="create_trending_pdf"
+    )
+    if not snapshot_path:
+        raise ValueError(
+            "No snapshot path returned from upstream task. "
+            "Expected XCom from 'task_create_trending_snapshot' or 'create_trending_pdf'."
+        )
 
-    pdf_path_obj = Path(pdf_path)
-    if not pdf_path_obj.is_absolute():
-        pdf_path_obj = (BASE_DIR / pdf_path_obj).resolve()
+    snapshot_path_obj = Path(snapshot_path)
+    if not snapshot_path_obj.is_absolute():
+        snapshot_path_obj = (BASE_DIR / snapshot_path_obj).resolve()
 
-    if not pdf_path_obj.exists():
-        raise FileNotFoundError(f"Generated PDF not found at {pdf_path_obj}")
+    if not snapshot_path_obj.exists():
+        raise FileNotFoundError(f"Generated snapshot not found at {snapshot_path_obj}")
 
     if not YT_EXTRACT_PROMPT_PATH.exists():
         raise FileNotFoundError(
@@ -150,15 +164,16 @@ def extract_trending_data_with_llm(ti, **_: dict) -> None:
     with YT_EXTRACT_PROMPT_PATH.open("r", encoding="utf-8") as f:
         prompt_instructions = f.read()
 
-    reader = PdfReader(str(pdf_path_obj))
-    pages_text = []
-    for page in reader.pages:
-        text = page.extract_text() or ""
-        pages_text.append(text)
-    pdf_text = "\n\n".join(pages_text).strip()
+    # OCR the PNG snapshot to extract text content for the LLM.
+    try:
+        image = Image.open(snapshot_path_obj)
+    except Exception as exc:
+        raise RuntimeError(f"Failed to open snapshot image at {snapshot_path_obj}") from exc
 
-    if not pdf_text:
-        raise ValueError(f"No text extracted from PDF at {pdf_path_obj}")
+    ocr_text = pytesseract.image_to_string(image) or ""
+
+    if not ocr_text.strip():
+        raise ValueError(f"No text extracted from image at {snapshot_path_obj}")
 
     llm = ChatOpenAI(
         model="gpt-4.1-mini",
@@ -181,7 +196,7 @@ def extract_trending_data_with_llm(ti, **_: dict) -> None:
     chain = prompt | llm
     response = chain.invoke(
         {
-            "pdf_text": pdf_text,
+            "pdf_text": ocr_text,
             "instructions": prompt_instructions,
         }
     )
@@ -307,22 +322,22 @@ def extract_trending_data_with_llm(ti, **_: dict) -> None:
 
 def purge_old_files(**_: dict) -> None:
     """
-    Remove PDF files and DuckDB records older than RETENTION_DAYS.
+    Remove snapshot files and DuckDB records older than RETENTION_DAYS.
     """
     import duckdb
 
     cutoff = datetime.now(timezone.utc) - timedelta(days=RETENTION_DAYS)
 
-    # Delete old PDF files from the project root.
-    for path in BASE_DIR.glob("output_*.pdf"):
+    # Delete old snapshot files from the project root.
+    for path in BASE_DIR.glob("output_*.png"):
         if not path.is_file():
             continue
         file_mtime = datetime.fromtimestamp(path.stat().st_mtime, tz=timezone.utc)
         if file_mtime < cutoff:
             path.unlink()
 
-    # Delete old PDF files from the data directory.
-    for path in DATA_DIR.glob("output_*.pdf"):
+    # Delete old snapshot files from the data directory.
+    for path in DATA_DIR.glob("output_*.png"):
         if not path.is_file():
             continue
         file_mtime = datetime.fromtimestamp(path.stat().st_mtime, tz=timezone.utc)
@@ -345,34 +360,45 @@ def purge_old_files(**_: dict) -> None:
 
 
 with DAG(
-    dag_id="yt_trending_pdf_dag",
+    dag_id="yt_extract_trending_dag",
     description=(
-        "Capture YouTube Trending as a PDF, store metadata in DuckDB, "
+        "Capture YouTube Trending as an image snapshot, store metadata in DuckDB, "
         "and purge old snapshots."
     ),
     start_date=datetime(2025, 1, 1),
     schedule=timedelta(hours=2),
     catchup=False,
-    tags=["youtube", "trending", "pdf", "duckdb"],
+    tags=["youtube", "trending"],
 ) as dag:
-    create_pdf = PythonOperator(
-        task_id="create_trending_pdf",
-        python_callable=run_create_trending_pdf,
+
+    start = EmptyOperator(
+        task_id="start",
+    )
+
+    create_snapshot = PythonOperator(
+        task_id="create_snapshot",
+        python_callable=create_trending_snapshot,
     )
 
     save_metadata = PythonOperator(
-        task_id="save_snapshot_metadata",
+        task_id="save_metadata",
         python_callable=store_snapshot_metadata,
     )
 
-    extract_trending = PythonOperator(
-        task_id="extract_trending_data_with_llm",
+    extract_data = PythonOperator(
+        task_id="extract_data",
         python_callable=extract_trending_data_with_llm,
     )
 
-    purge_old = PythonOperator(
+    purge_old_snapshots = PythonOperator(
         task_id="purge_old_snapshots",
         python_callable=purge_old_files,
     )
 
-    create_pdf >> save_metadata >> extract_trending >> purge_old
+    stop = EmptyOperator(
+        task_id="stop",
+    )
+
+
+    start >> create_snapshot >> save_metadata >> extract_data >> stop
+    start >> purge_old_snapshots >> stop
