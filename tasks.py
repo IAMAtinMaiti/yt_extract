@@ -70,40 +70,35 @@ def create_trending_snapshot(
             # static wait so we still get *something* in the screenshot.
             time.sleep(np.random.randint(1, 3))
 
-        # Scroll to the bottom incrementally to load more content, since
-        # YouTube uses infinite scrolling for additional results.
-        #
-        # We keep scrolling until the page height stops increasing for a few
-        # consecutive checks, giving several seconds between scrolls so new
-        # results and thumbnails can load.
-        stable_iterations = 0
-        last_height = 0
-        max_scroll_cycles = 50
-        while stable_iterations < 3 and max_scroll_cycles > 0:
-            driver.execute_script(
-                "window.scrollTo(0, document.documentElement.scrollHeight);"
+        # Perform a limited number of viewport-height scrolls so we only
+        # capture roughly the first "three pages" of results. This keeps
+        # the resulting screenshot from becoming extremely tall, which
+        # causes issues for downstream OCR.
+        try:
+            viewport_height = driver.execute_script(
+                "return window.innerHeight || document.documentElement.clientHeight || 1080;"
             )
-            # Allow time for new content (and images) to load.
-            time.sleep(4.0)
-            new_height = driver.execute_script(
-                "return document.documentElement.scrollHeight;"
-            )
-            if not isinstance(new_height, (int, float)):
-                break
-            if new_height <= last_height:
-                stable_iterations += 1
-            else:
-                stable_iterations = 0
-                last_height = new_height
-            max_scroll_cycles -= 1
+        except Exception:
+            viewport_height = 1080
 
-        # Use Chrome DevTools Protocol to capture a full-page PNG screenshot
-        # beyond just the visible viewport.
+        max_viewport_scrolls = 3
+        for _ in range(max_viewport_scrolls):
+            driver.execute_script("window.scrollBy(0, arguments[0]);", viewport_height)
+            time.sleep(3.0)
+
+        # Use Chrome DevTools Protocol to capture a PNG screenshot of the
+        # loaded content. We clamp the height to a small multiple of the
+        # viewport to avoid generating excessively tall images.
         driver.execute_cdp_cmd("Page.enable", {})
         metrics = driver.execute_cdp_cmd("Page.getLayoutMetrics", {})
         content_size = metrics.get("contentSize") or metrics.get("cssContentSize") or {}
         width = content_size.get("width", 1920)
         height = content_size.get("height", 1080)
+
+        # Limit capture height to ~three viewports worth of content.
+        max_capture_height = viewport_height * 3
+        if isinstance(height, (int, float)) and height > max_capture_height:
+            height = max_capture_height
 
         screenshot = driver.execute_cdp_cmd(
             "Page.captureScreenshot",

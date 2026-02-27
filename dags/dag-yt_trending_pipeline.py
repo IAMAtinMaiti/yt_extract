@@ -167,9 +167,27 @@ def extract_trending_data_with_llm(ti, **_: dict) -> None:
     with YT_EXTRACT_PROMPT_PATH.open("r", encoding="utf-8") as f:
         prompt_instructions = f.read()
 
+    # Allow large images produced by the snapshot step. Pillow has a built‑in
+    # safety limit (to prevent decompression bomb attacks) that can be too
+    # strict for our legitimate large screenshots, so we disable that check
+    # in this controlled pipeline context.
+    Image.MAX_IMAGE_PIXELS = None
+
     # OCR the PNG snapshot to extract text content for the LLM.
     try:
         image = Image.open(snapshot_path_obj)
+
+        # Tesseract struggles with extremely tall images (like long scrolling
+        # screenshots). If the height is excessive, downscale proportionally
+        # to keep the image within a safe size while preserving readability.
+        max_height = 8000
+        if image.height > max_height:
+            scale = max_height / float(image.height)
+            new_width = int(image.width * scale)
+            image = image.resize((new_width, max_height), Image.LANCZOS)
+
+        # Use a standard mode for OCR.
+        image = image.convert("L")
     except Exception as exc:
         raise RuntimeError(f"Failed to open snapshot image at {snapshot_path_obj}") from exc
 
