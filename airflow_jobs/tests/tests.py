@@ -1,4 +1,4 @@
-from project.tasks import create_trending_snapshot
+from airflow_jobs.project import create_trending_snapshot
 
 
 # Sample data from the user

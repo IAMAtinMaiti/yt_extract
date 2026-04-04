@@ -2,12 +2,12 @@
 /.idea/
 /.venv/
 /data/
-/datalake/
+/airflow_jobs/datalake/
 /logs/
 /airflow/
 /warehouse/
 
-/dags/__pycache__/
+/airflow_jobs/dags/__pycache__/
 /plugins/__pycache__/
 /logs/__pycache__/
 /__pycache__/
