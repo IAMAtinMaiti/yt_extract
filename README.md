@@ -21,37 +21,43 @@ High‑level objectives:
 
 ---
 
-### Current Components
+### Architecture Overview
 
-- `tasks.py` – Python script that:
-  - Opens the YouTube Trending search results page in a headless Chrome browser via Selenium.
-  - Scrolls through the page to capture multiple viewports.
-  - Uses Chrome DevTools to capture the page as a PNG screenshot.
-  - Saves the PNG locally with a timestamp in the filename.
+The project is divided into **three main components**:
 
-- `dags/dag-yt_trending_pipeline.py` – Airflow DAG that orchestrates:
-  - Capturing trending snapshots.
-  - Storing metadata in DuckDB.
-  - Purging old snapshots after retention period.
+#### 1. **Airflow + Data Lake (JSON) + DBT + ETL Jobs** (`airflow_jobs/`)
+   
+   Core data ingestion and transformation pipeline:
+   - `dags/dag-yt_trending_pipeline.py` – Airflow DAG orchestrating:
+     - Capturing YouTube trending snapshots via headless Chrome (Selenium).
+     - Storing raw JSON data in the datalake.
+     - Running DBT transformations for data quality and business logic.
+     - Purging old data according to retention policies.
+   - `project/tasks.py` – Python script that:
+     - Opens YouTube Trending search results in headless Chrome.
+     - Captures screenshots as PNG.
+     - Extracts and stores raw JSON metadata.
+   - `configs/` – Configuration files including `airflow.cfg` and environment variables.
+   - `start_airflow.sh` – Script to initialize and start Airflow standalone.
 
-- `fetch_and_query_duckdb.py` – Script to fetch new snapshots and run queries on the DuckDB database.
+#### 2. **DuckDB Serving on Kubernetes** (`duckdb_serving/`)
+   
+   Scalable data warehouse and query service:
+   - `api/duckdb_server.py` – REST API for querying DuckDB.
+   - `k8s/` – Kubernetes manifests for deploying DuckDB:
+     - `duckdb-deployment.yaml` – DuckDB container deployment.
+     - `duckdb-service.yaml` – Kubernetes service for accessing DuckDB.
+     - `duckdb-configmap.yaml` – Configuration management.
+     - `duckdb-pvc.yaml` – Persistent volume for data storage.
+   - `docker/` – Docker setup for containerizing DuckDB.
+   - `init/init_db.py` – Database initialization scripts.
 
-- `ui.py` – Streamlit app for querying the DuckDB database with custom SQL.
-
-- `Dockerfile` – Docker image for running Apache Superset for data visualization.
-
-- `start_airflow.sh` – Script to start Airflow standalone.
-
-- `templates/deployment.yaml` – Example Kubernetes manifest for a simple Nginx‑based “Hello World” web app.  
-  This is currently a template / example and not yet wired to the project.
-
-- `requirements.txt` – Python dependencies used by the project:
-  - `selenium` – Browser automation for headless Chrome.
-  - `duckdb` – Embedded database for storing metadata.
-  - `streamlit` – UI for querying data.
-  - `apache-airflow` – Orchestration for data pipelines.
-  - `pytesseract` – (Planned) OCR for extracting text from screenshots.
-  - `pypdf` – (Planned) PDF processing.
+#### 3. **Self-Hosted Superset for Dashboarding** (`dashbord/`)
+   
+   Analytics and visualization layer:
+   - `Dockerfile` – Docker image for Apache Superset.
+   - Connects to DuckDB for querying transformed data.
+   - Provides interactive dashboards and insights.
 
 ---
 

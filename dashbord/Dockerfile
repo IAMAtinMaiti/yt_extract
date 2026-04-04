@@ -14,14 +14,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 WORKDIR /app
 
 # Project deps (DuckDB for your data)
-COPY requirements.txt .
+COPY ../airflow_jobs/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Install Superset
 RUN pip install --no-cache-dir "apache-superset>=4.0,<5"
 
 # Copy app (for any custom config)
-COPY . .
+COPY .. .
 
 # Run at container start, not at build time
 ENV FLASK_APP=superset

@@ -14,12 +14,12 @@ from airflow.providers.standard.operators.python import PythonOperator
 from airflow.providers.standard.operators.empty import EmptyOperator
 
 # Add the yt_extract project to sys.path so we can import project.tasks
-YT_EXTRACT_DIR = Path("/Users/atinmaiti/Documents/Github/yt_extract")
+YT_EXTRACT_DIR = Path("/")
 if str(YT_EXTRACT_DIR) not in sys.path:
     sys.path.insert(0, str(YT_EXTRACT_DIR))
 
 # Import business logic from tasks module
-from project.tasks import (
+from airflow_jobs.project.tasks import (
     create_trending_snapshot,
     store_snapshot_metadata,
     load_extracted_data_from_datalake,
