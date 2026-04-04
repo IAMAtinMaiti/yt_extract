@@ -1,0 +1,32 @@
+version: '3.8'
+
+services:
+  duckdb:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    container_name: duckdb-server
+    ports:
+      - "8000:8000"
+    environment:
+      - DUCKDB_DATA_PATH=/data/duckdb/data.duckdb
+      - LOG_LEVEL=INFO
+    volumes:
+      - duckdb_data:/data/duckdb
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    networks:
+      - duckdb_network
+
+volumes:
+  duckdb_data:
+    driver: local
+
+networks:
+  duckdb_network:
+    driver: bridge
+
