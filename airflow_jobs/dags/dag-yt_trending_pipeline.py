@@ -7,23 +7,23 @@ and purge old snapshots.
 
 from __future__ import annotations
 from datetime import datetime, timedelta
-from pathlib import Path
-import sys
 from airflow import DAG
 from airflow.providers.standard.operators.python import PythonOperator
 from airflow.providers.standard.operators.empty import EmptyOperator
 
-# Add the yt_extract project to sys.path so we can import project.tasks
-YT_EXTRACT_DIR = Path("/")
-if str(YT_EXTRACT_DIR) not in sys.path:
-    sys.path.insert(0, f"{str(YT_EXTRACT_DIR)}/airflow_jobs")
-
 # Import business logic from tasks module
-from airflow_jobs.project.tasks import (
-    create_trending_snapshot,
-    store_snapshot_metadata,
-    load_extracted_data_from_datalake,
-    purge_old_files,
+import sys
+from pathlib import Path
+
+# Add parent directory to path for imports
+dag_dir = Path(__file__).parent
+sys.path.insert(0, str(dag_dir.parent))
+
+from project.tasks import (  # type: ignore # noqa: F401
+    create_trending_snapshot,  # noqa: F401
+    store_snapshot_metadata,  # noqa: F401
+    load_extracted_data_from_datalake,  # noqa: F401
+    purge_old_files,  # noqa: F401
 )
 
 
