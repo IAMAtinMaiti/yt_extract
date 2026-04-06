@@ -2,22 +2,20 @@
 
 set -euo pipefail
 
-PROJECT_ROOT="$(cd "$(dirname "$0")" && pwd)"
+PROJECT_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 
-export AIRFLOW_HOME="$PROJECT_ROOT/airflow"
-export AIRFLOW_CONFIG="$PROJECT_ROOT/configs/airflow.cfg"
+export AIRFLOW_HOME="$PROJECT_ROOT/airflow_jobs/"
+export AIRFLOW_CONFIG="$AIRFLOW_HOME/configs/airflow.cfg"
 
-JWT_SECRET_FILE="$AIRFLOW_HOME/config/jwt_secret"
+JWT_SECRET_FILE="$AIRFLOW_HOME/temp/config/jwt_secret"
 
 mkdir -p \
-  "$AIRFLOW_HOME" \
-  "$AIRFLOW_HOME/logs" \
-  "$AIRFLOW_HOME/plugins" \
-  "$AIRFLOW_HOME/config" \
-  "$PROJECT_ROOT/datalake" \
-  "$PROJECT_ROOT/warehouse"
+  "$AIRFLOW_HOME/temp/logs" \
+  "$AIRFLOW_HOME/temp/plugins" \
+  "$AIRFLOW_HOME/temp/config" \
+  "$PROJECT_ROOT/airflow_jobs/datalake"
 
-cd "$PROJECT_ROOT"
+cd "$PROJECT_ROOT/airflow_jobs"
 
 if [[ -z "${AIRFLOW__API_AUTH__JWT_SECRET:-}" ]]; then
   if [[ ! -s "$JWT_SECRET_FILE" ]]; then
