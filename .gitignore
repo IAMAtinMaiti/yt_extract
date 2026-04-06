@@ -1,2 +1,3 @@
 .idea
 .venv
+/airflow_jobs/temp/config/jwt_secret
