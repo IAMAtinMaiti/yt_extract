@@ -1,0 +1,131 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: superset-deployment
+  namespace: duckdb
+  labels:
+    app: superset
+spec:
+  replicas: 1
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: superset
+  template:
+    metadata:
+      labels:
+        app: superset
+    spec:
+      containers:
+      - name: superset
+        image: dashboard:latest
+        imagePullPolicy: IfNotPresent
+        ports:
+        - name: http
+          containerPort: 8088
+          protocol: TCP
+        env:
+        - name: FLASK_APP
+          value: "superset"
+        - name: SUPERSET_PORT
+          value: "8088"
+        - name: SUPERSET_SECRET_KEY
+          valueFrom:
+            secretKeyRef:
+              name: superset-secrets
+              key: secret-key
+        - name: SUPERSET_ADMIN_USERNAME
+          value: "admin"
+        - name: SUPERSET_ADMIN_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: superset-secrets
+              key: admin-password
+        - name: SUPERSET_ADMIN_FIRST_NAME
+          value: "Admin"
+        - name: SUPERSET_ADMIN_LAST_NAME
+          value: "User"
+        - name: SUPERSET_ADMIN_EMAIL
+          value: "admin@superset.local"
+        - name: PYTHONPATH
+          value: "/app"
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "250m"
+          limits:
+            memory: "1Gi"
+            cpu: "500m"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8088
+          initialDelaySeconds: 60
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8088
+          initialDelaySeconds: 30
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
+        volumeMounts:
+        - name: superset-data
+          mountPath: /app/data
+      volumes:
+      - name: superset-data
+        persistentVolumeClaim:
+          claimName: duckdb-pvc
+      restartPolicy: Always
+      terminationGracePeriodSeconds: 30
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: duckdb-pvc
+  namespace: duckdb
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: standard
+  resources:
+    requests:
+      storage: 10Gi
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: superset-service
+  namespace: duckdb
+  labels:
+    app: superset
+spec:
+  type: LoadBalancer
+  selector:
+    app: superset
+  ports:
+  - name: http
+    port: 8088
+    targetPort: 8088
+    protocol: TCP
+
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: superset-secrets
+  namespace: duckdb
+type: Opaque
+stringData:
+  secret-key: "admin"
+  admin-password: "admin"
+
