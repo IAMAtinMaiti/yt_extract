@@ -21,41 +21,12 @@ sys.path.insert(0, str(dag_dir.parent))
 
 from project.tasks import (  # type: ignore # noqa: F401
     create_trending_snapshot,  # noqa: F401
-    store_snapshot_metadata,  # noqa: F401
-    load_extracted_data_from_datalake,  # noqa: F401
-    purge_old_files,  # noqa: F401
 )
 
 
 def create_snapshot_wrapper(**kwargs: dict) -> str:
     """Wrapper to call create_trending_snapshot from tasks"""
     return create_trending_snapshot()
-
-
-def store_metadata_wrapper(ti=None, **kwargs) -> None:
-    """Wrapper to call store_snapshot_metadata with XCom data"""
-    # Get task instance from kwargs for Airflow 2.7+
-    if not ti:
-        ti = kwargs.get('task_instance')
-    
-    if not ti:
-        raise ValueError("Task instance context not available")
-    
-    snapshot_path = ti.xcom_pull(task_ids="create_snapshot")
-    if not snapshot_path:
-        raise ValueError("No snapshot path returned from create_snapshot")
-    store_snapshot_metadata(snapshot_path)
-
-
-def load_data_wrapper(**kwargs: dict) -> None:
-    """Wrapper to call load_extracted_data_from_datalake from tasks"""
-    load_extracted_data_from_datalake()
-
-
-def purge_files_wrapper(**kwargs: dict) -> None:
-    """Wrapper to call purge_old_files from tasks"""
-    purge_old_files(retention_days=30)
-
 
 
 with DAG(
@@ -80,29 +51,12 @@ with DAG(
         do_xcom_push=True,
     )
 
-    save_metadata = PythonOperator(
-        task_id="save_metadata",
-        python_callable=store_metadata_wrapper,
-    )
-
-    load_extracted_data = PythonOperator(
-        task_id="load_extracted_data",
-        python_callable=load_data_wrapper,
-    )
-
-    purge_old_snapshots = PythonOperator(
-        task_id="purge_old_snapshots",
-        python_callable=purge_files_wrapper,
-    )
-
     stop = EmptyOperator(
         task_id="stop",
     )
 
     # Main workflow: capture snapshot -> save metadata -> load data from datalake
-    start >> create_snapshot >> save_metadata >> load_extracted_data >> stop
-    
-    # Parallel task: purge old files
-    start >> purge_old_snapshots >> stop
+    start >> create_snapshot >> stop
+
 
 
