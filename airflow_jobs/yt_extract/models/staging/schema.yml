@@ -1,0 +1,50 @@
+version: 2
+
+models:
+  - name: stg_youtube_trending
+    description: >
+      Staging table that reads all raw JSON snapshot files from the datalake
+      and loads them into DuckDB. One row per video per snapshot file.
+    columns:
+      - name: video_sk
+        description: "MD5 surrogate key (title | channel | video_url | source_file)"
+        data_tests:
+          - unique
+          - not_null
+
+      - name: title
+        description: "Video title"
+        data_tests:
+          - not_null
+
+      - name: channel
+        description: "Channel name"
+
+      - name: views
+        description: "View count as raw string (e.g. '81M views')"
+
+      - name: upload_time
+        description: "Upload / stream time as raw string (e.g. '7 months ago')"
+
+      - name: video_url
+        description: "Relative video URL path"
+
+      - name: channel_url
+        description: "Relative channel URL path"
+
+      - name: thumbnail_url
+        description: "Full thumbnail image URL"
+
+      - name: duration
+        description: "Video duration string (empty for livestreams/shorts)"
+
+      - name: source_file
+        description: "Absolute path of the JSON snapshot file this row was loaded from"
+        data_tests:
+          - not_null
+
+      - name: loaded_at
+        description: "Timestamp when this row was loaded into DuckDB"
+        data_tests:
+          - not_null
+

@@ -21,12 +21,18 @@ sys.path.insert(0, str(dag_dir.parent))
 
 from project.tasks import (  # type: ignore # noqa: F401
     create_trending_snapshot,  # noqa: F401
+    run_dbt_models,            # noqa: F401
 )
 
 
 def create_snapshot_wrapper(**kwargs: dict) -> str:
     """Wrapper to call create_trending_snapshot from tasks"""
     return create_trending_snapshot()
+
+
+def run_dbt_wrapper(**kwargs: dict) -> str:
+    """Wrapper to run dbt staging models — loads JSON snapshots into DuckDB."""
+    return run_dbt_models(select="staging")
 
 
 with DAG(
@@ -51,12 +57,15 @@ with DAG(
         do_xcom_push=True,
     )
 
+    load_to_duckdb = PythonOperator(
+        task_id="load_to_duckdb",
+        python_callable=run_dbt_wrapper,
+        do_xcom_push=True,
+    )
+
     stop = EmptyOperator(
         task_id="stop",
     )
 
-    # Main workflow: capture snapshot -> save metadata -> load data from datalake
-    start >> create_snapshot >> stop
-
-
-
+    # Main workflow: capture snapshot → run dbt staging models → done
+    start >> create_snapshot >> load_to_duckdb >> stop

@@ -24,8 +24,17 @@ clean-targets:         # directories to be removed by `dbt clean`
 # In this example config, we tell dbt to build all models in the example/
 # directory as views. These settings can be overridden in the individual model
 # files using the `{{ config(...) }}` macro.
+vars:
+  # Absolute path to the datalake folder containing output_*.json snapshot files.
+  # Override at runtime: dbt run --vars '{"datalake_path": "/absolute/path/to/datalake"}'
+  datalake_path: "../datalake"
+
 models:
   yt_extract:
+    staging:
+      +materialized: incremental
+      +incremental_strategy: append
+      +schema: staging
     # Config indicated by + and applies to all files under models/example/
     example:
       +materialized: view

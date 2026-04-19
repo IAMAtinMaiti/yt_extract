@@ -8,6 +8,7 @@ for a broader YouTube data extraction and analysis pipeline.
 
 import json
 import logging
+import subprocess
 from datetime import datetime
 from pathlib import Path
 from typing import Final
@@ -113,3 +114,54 @@ def create_trending_snapshot(target_url: str = TARGET_URL) -> str:
 
     logger.info("Trending snapshot extraction completed")
     return str(output_file)
+
+
+def run_dbt_models(select: str = "staging") -> str:
+    """
+    Run dbt models to load raw JSON snapshot files from the datalake into DuckDB.
+
+    The dev.duckdb file is created automatically by dbt-duckdb if it does not
+    already exist (DuckDB creates the file on first connection).
+
+    Args:
+        select: dbt node selector.  Defaults to 'staging' to run only the
+                staging layer.  Pass 'all' or leave out to run every model.
+    Returns:
+        str: dbt stdout on success.
+    Raises:
+        RuntimeError: if dbt exits with a non-zero return code.
+    """
+    dbt_project_dir = BASE_DIR / "yt_extract"
+    datalake_dir = DATA_DIR  # already an absolute Path
+
+    logger.info("Starting dbt run  |  project: %s  |  datalake: %s", dbt_project_dir, datalake_dir)
+
+    cmd = [
+        "dbt", "run",
+        "--project-dir", str(dbt_project_dir),
+        "--profiles-dir", str(Path.home() / ".dbt"),
+        "--select", select,
+        "--vars", json.dumps({"datalake_path": str(datalake_dir)}),
+    ]
+    logger.info("dbt command: %s", " ".join(cmd))
+
+    result = subprocess.run(
+        cmd,
+        capture_output=True,
+        text=True,
+        cwd=str(dbt_project_dir),   # keeps dev.duckdb inside the project dir
+    )
+
+    if result.stdout:
+        logger.info("dbt stdout:\n%s", result.stdout)
+    if result.stderr:
+        logger.warning("dbt stderr:\n%s", result.stderr)
+
+    if result.returncode != 0:
+        raise RuntimeError(
+            f"dbt run failed (exit {result.returncode}):\n{result.stderr or result.stdout}"
+        )
+
+    logger.info("dbt run completed successfully")
+    return result.stdout
+
